@@ -88,8 +88,6 @@ export const VoiceCloningModal: React.FC<VoiceCloningModalProps> = ({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   // Microphone recording handlers
   const handleStartRecording = async () => {
     try {
@@ -376,6 +374,8 @@ export const VoiceCloningModal: React.FC<VoiceCloningModalProps> = ({
       onClose();
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">

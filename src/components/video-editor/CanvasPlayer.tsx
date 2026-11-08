@@ -46,17 +46,25 @@ export const CanvasPlayer: React.FC<CanvasPlayerProps> = ({
   // Initialize renderer
   useEffect(() => {
     if (canvasRef.current) {
-      rendererRef.current = new VideoRenderer(canvasRef.current);
+      try {
+        rendererRef.current = new VideoRenderer(canvasRef.current);
+      } catch (err) {
+        console.error('Canvas renderer init failed', err);
+      }
     }
   }, []);
 
   // Continuous frame rendering on time change or project update
   const renderCurrent = useCallback(() => {
     if (rendererRef.current && canvasRef.current) {
-      rendererRef.current.renderFrame(project, project.currentTime, {
-        showSafeAreas: project.safeAreaGuide !== 'none',
-        selectedClipId: project.selectedClipId,
-      });
+      try {
+        rendererRef.current.renderFrame(project, project.currentTime, {
+          showSafeAreas: project.safeAreaGuide !== 'none',
+          selectedClipId: project.selectedClipId,
+        });
+      } catch (err) {
+        console.error('Frame render failed', err);
+      }
     }
   }, [project]);
 

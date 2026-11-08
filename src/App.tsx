@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VOICES, VoiceProfile } from './data/voices';
 import { Header } from './components/Header';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { CommercialStudio } from './components/CommercialStudio';
 import { VoiceCatalog } from './components/VoiceCatalog';
 import { TemplatesGallery } from './components/TemplatesGallery';
@@ -201,11 +202,13 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {activeTab === 'editor' && (
           <div className="animate-in fade-in duration-200">
-            <VideoEditor
-              sessionTakes={takes}
-              initialTakeToImport={initialTakeToImport}
-              onClearInitialTake={() => setInitialTakeToImport(null)}
-            />
+            <ErrorBoundary label="Éditeur vidéo">
+              <VideoEditor
+                sessionTakes={takes}
+                initialTakeToImport={initialTakeToImport}
+                onClearInitialTake={() => setInitialTakeToImport(null)}
+              />
+            </ErrorBoundary>
           </div>
         )}
 

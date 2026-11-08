@@ -28,7 +28,7 @@ export class VideoRenderer {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    const ctx = canvas.getContext('2d', { alpha: false }) || canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get 2D rendering context');
     this.ctx = ctx;
 
