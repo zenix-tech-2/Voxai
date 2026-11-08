@@ -1,6 +1,6 @@
 {
-  "name": "VoxStudio AI - Multilingual Advertising Voice Studio",
-  "description": "Professional advertising voiceover studio featuring male and female voices in French and English with AI commercial scriptwriting.",
+  "name": "Lumen Studio - AI Visual Synthesizer",
+  "description": "Interactive premium AI image generator and creative studio powered by Google Gemini, featuring prompt direction, canvas post-processing, and multi-ratio synthesis.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

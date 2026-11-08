@@ -1,35 +1,37 @@
-import express, { Request, Response } from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import dotenv from "dotenv";
+import express from 'express';
+import { createServer as createViteServer } from 'vite';
+import path from 'path';
+import dotenv from 'dotenv';
+import { apiRouter } from './server/routes.ts';
 
 dotenv.config();
 
-import { app } from "./app";
+const app = express();
+const PORT = 3000;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const port = Number(process.env.PORT) || 3000;
+app.use(express.json({ limit: '40mb' }));
+app.use(express.urlencoded({ extended: true, limit: '40mb' }));
 
-// Local dev / self-hosted only. On Vercel, api/index.ts serves the API instead.
-// Setup Vite middleware in dev or static serving in production
+// Mount all API endpoints
+app.use('/api', apiRouter);
+
+// Vite middleware & Static server setup
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer } = await import("vite");
-    const viteServer = await createServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+  if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.resolve('dist')));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.resolve('dist/index.html'));
     });
-    app.use(viteServer.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, "dist")));
-    app.get("*", (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(__dirname, "dist", "index.html"));
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
     });
+    app.use(vite.middlewares);
   }
 
-  app.listen(port, "0.0.0.0", () => {
-    console.log(`VoxStudio server listening on http://0.0.0.0:${port}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Lumen Studio server running on http://0.0.0.0:${PORT}`);
   });
 }
 

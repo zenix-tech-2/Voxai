@@ -1,116 +1,159 @@
-import React from 'react';
-import { Mic2, Radio, BookOpen, Volume2, Globe2, Dna, Sparkles, Film } from 'lucide-react';
-
-export type StudioTab = 'editor' | 'studio' | 'catalog' | 'templates';
+import { Sparkles, Activity, Mic, Menu, Volume2 } from 'lucide-react';
+import { AppTab } from '../types';
 
 interface HeaderProps {
-  activeTab: StudioTab;
-  onTabChange: (tab: StudioTab) => void;
-  voiceCount: number;
-  onOpenCloningModal: () => void;
+  activeTab: AppTab;
+  onSelectTab: (tab: AppTab) => void;
+  onOpenStatusModal: () => void;
+  onQuickGenerate: () => void;
+  onOpenDrawer: () => void;
+  onOpenVoiceTools: () => void;
+  isListening: boolean;
+  historyCount: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
-  onTabChange,
-  voiceCount,
-  onOpenCloningModal,
+  onSelectTab,
+  onOpenStatusModal,
+  onQuickGenerate,
+  onOpenDrawer,
+  onOpenVoiceTools,
+  isListening,
+  historyCount,
 }) => {
   return (
-    <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 via-indigo-500 to-rose-500 p-0.5 shadow-lg shadow-cyan-500/20">
-            <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-              <Mic2 className="w-5 h-5 text-cyan-400" />
-            </div>
+    <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-[#090D14]/90 backdrop-blur-md px-6 py-3.5">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-8">
+        {/* Zone 1: Brand Wordmark (Single text element in display face) */}
+        <a
+          href="#studio"
+          onClick={(e) => {
+            e.preventDefault();
+            onSelectTab('studio');
+          }}
+          className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 hover:opacity-90 transition-opacity"
+        >
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-500 via-amber-400 to-amber-200 flex items-center justify-center text-slate-950 shadow-sm shadow-amber-500/20">
+            <Sparkles className="w-4 h-4 fill-slate-950" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-white tracking-tight">
-                VoxStudio <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">AI</span>
-              </h1>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                Voice & Video Editor Pro
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Voix Africaines 🌍 • Montage Vidéo CapCut Pro 🎬 • Clonage Vocal 🧬
-            </p>
-          </div>
-        </div>
+          <span>LUMEN STUDIO</span>
+        </a>
 
-        {/* Center Navigation Tabs */}
-        <div className="flex items-center p-1 bg-slate-900/90 rounded-2xl border border-slate-800 shadow-inner overflow-x-auto max-w-full">
+        {/* Zone 2: Clean single-line text navigation links */}
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
           <button
-            type="button"
-            onClick={() => onTabChange('editor')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'editor'
-                ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 shadow-md font-bold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Film className="w-3.5 h-3.5" />
-            <span>Éditeur Vidéo (CapCut Pro)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onTabChange('studio')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+            onClick={() => onSelectTab('studio')}
+            className={`whitespace-nowrap shrink-0 transition-colors cursor-pointer py-1 ${
               activeTab === 'studio'
-                ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 shadow-md font-bold'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'text-amber-400 font-semibold border-b-2 border-amber-400'
+                : 'hover:text-slate-200'
             }`}
           >
-            <Radio className="w-3.5 h-3.5" />
-            <span>Studio Voix-Off</span>
+            Studio
           </button>
-
           <button
-            type="button"
-            onClick={() => onTabChange('catalog')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'catalog'
-                ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 shadow-md font-bold'
-                : 'text-slate-400 hover:text-slate-200'
+            onClick={() => onSelectTab('canvas')}
+            className={`whitespace-nowrap shrink-0 transition-colors cursor-pointer py-1 ${
+              activeTab === 'canvas'
+                ? 'text-amber-400 font-semibold border-b-2 border-amber-400'
+                : 'hover:text-slate-200'
             }`}
           >
-            <Volume2 className="w-3.5 h-3.5" />
-            <span>Voix ({voiceCount})</span>
+            Canvas Suite
           </button>
-
           <button
-            type="button"
-            onClick={() => onTabChange('templates')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'templates'
-                ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 shadow-md font-bold'
-                : 'text-slate-400 hover:text-slate-200'
+            onClick={() => onSelectTab('voice')}
+            className={`whitespace-nowrap shrink-0 transition-colors cursor-pointer py-1 flex items-center gap-1.5 ${
+              activeTab === 'voice'
+                ? 'text-amber-400 font-semibold border-b-2 border-amber-400'
+                : 'hover:text-slate-200'
             }`}
           >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Modèles</span>
+            <span>Voice Studio</span>
+            <span className="text-[10px] font-mono text-amber-400 bg-amber-400/10 px-1.5 py-0.2 rounded border border-amber-400/20">
+              16 Voices
+            </span>
           </button>
-        </div>
-
-        {/* Right Info: Voice Cloning Button */}
-        <div className="flex items-center gap-2.5">
           <button
-            type="button"
-            onClick={onOpenCloningModal}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
+            onClick={() => onSelectTab('lab')}
+            className={`whitespace-nowrap shrink-0 transition-colors cursor-pointer py-1 ${
+              activeTab === 'lab'
+                ? 'text-amber-400 font-semibold border-b-2 border-amber-400'
+                : 'hover:text-slate-200'
+            }`}
           >
-            <Dna className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Cloner ma Voix</span>
+            Prompt Lab
+          </button>
+          <button
+            onClick={() => onSelectTab('gallery')}
+            className={`whitespace-nowrap shrink-0 transition-colors cursor-pointer py-1 ${
+              activeTab === 'gallery'
+                ? 'text-amber-400 font-semibold border-b-2 border-amber-400'
+                : 'hover:text-slate-200'
+            }`}
+          >
+            Curated Gallery
+          </button>
+          <button
+            onClick={() => onSelectTab('history')}
+            className={`whitespace-nowrap shrink-0 transition-colors cursor-pointer py-1 flex items-center gap-1.5 ${
+              activeTab === 'history'
+                ? 'text-amber-400 font-semibold border-b-2 border-amber-400'
+                : 'hover:text-slate-200'
+            }`}
+          >
+            <span>History</span>
+            {historyCount > 0 && (
+              <span className="text-[11px] font-mono tabular-nums text-slate-400">
+                ({historyCount})
+              </span>
+            )}
+          </button>
+        </nav>
+
+        {/* Zone 3: Primary Action & Controls */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Voice Tools Trigger */}
+          <button
+            onClick={onOpenVoiceTools}
+            className={`p-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center ${
+              isListening
+                ? 'bg-rose-500 text-white animate-pulse'
+                : 'text-amber-400 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30'
+            }`}
+            title="Open Voice Tools & Microphone"
+          >
+            <Mic className="w-4 h-4" />
           </button>
 
-          <div className="hidden lg:flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-950/30 px-2.5 py-1.5 rounded-xl border border-emerald-800/40">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-semibold text-emerald-300">100% Gratuit & Sans Carte</span>
-          </div>
+          {/* Engine & Vercel Telemetry */}
+          <button
+            onClick={onOpenStatusModal}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            title="Inspect 100% Free Engine Status & Vercel Deployment"
+          >
+            <Activity className="w-3.5 h-3.5 text-emerald-400" />
+            <span>100% Free · Vercel Ready</span>
+          </button>
+
+          {/* Primary New Action */}
+          <button
+            onClick={onQuickGenerate}
+            className="px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg shadow-sm shadow-amber-500/25 transition-all active:scale-[0.98] cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5"
+          >
+            <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
+            <span>New Synthesis</span>
+          </button>
+
+          {/* Drawer Toggle */}
+          <button
+            onClick={onOpenDrawer}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-800 transition-colors cursor-pointer"
+            title="Open Options Drawer"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </header>

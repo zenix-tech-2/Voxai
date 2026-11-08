@@ -1,293 +1,450 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { VOICES, VoiceProfile } from './data/voices';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Header } from './components/Header';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { CommercialStudio } from './components/CommercialStudio';
-import { VoiceCatalog } from './components/VoiceCatalog';
-import { TemplatesGallery } from './components/TemplatesGallery';
-import { TakeHistory } from './components/TakeHistory';
-import { AICommercialWriterModal } from './components/AICommercialWriterModal';
-import { VoiceCloningModal } from './components/VoiceCloningModal';
-import { VideoEditor } from './components/video-editor/VideoEditor';
-import { StudioTab } from './components/Header';
-import { TakeItem, generateSpeech } from './utils/speechEngine';
-import { AdTemplate } from './data/adTemplates';
-import { bgMusic } from './utils/audioSynth';
+import { PromptStudio } from './components/PromptStudio';
+import { CanvasEditor } from './components/CanvasEditor';
+import { PromptLab } from './components/PromptLab';
+import { CuratedGallery } from './components/CuratedGallery';
+import { HistoryView } from './components/HistoryView';
+import { StatusModal } from './components/StatusModal';
+import { StudioDrawer } from './components/StudioDrawer';
+import { VoiceToolsModal } from './components/VoiceToolsModal';
+import { NavigationDock } from './components/NavigationDock';
+import { VoiceStudio } from './components/VoiceStudio';
+import { CURATED_SHOWCASE } from './data/curatedPresets';
+import { GeneratedImage, StudioSettings, AppTab } from './types';
+import { useVoiceTools, VoiceCommand } from './hooks/useVoiceTools';
 import {
+  ChevronLeft,
+  ChevronRight,
   Sparkles,
-  Users,
-  Globe,
-  Dna,
-  Zap,
-  Film,
+  Sliders,
+  Wand2,
+  Compass,
+  Archive,
+  Volume2,
+  Mic,
 } from 'lucide-react';
 
-const STORAGE_KEY_CLONES = 'voxstudio_cloned_voices';
+const INITIAL_SETTINGS: StudioSettings = {
+  prompt:
+    'Surreal architectural photography of a floating minimalist marble pavilion in a calm violet cosmic ocean under twin crescent moons, soft ethereal ambient light, long exposure water, Hasselblad medium format',
+  negativePrompt: 'blurry, oversaturated, plastic texture, low quality, watermark',
+  style: 'Surreal Architecture',
+  lighting: 'Moody Chiaroscuro',
+  camera: '24mm Ultra-Wide',
+  aspectRatio: '16:9',
+  referenceImage: null,
+  referenceName: null,
+  quality: 'hd',
+  engine: 'flux',
+};
+
+const STORAGE_KEY = 'lumen_studio_history_v1';
+
+const SCREENS: { id: AppTab; label: string; icon: React.FC<{ className?: string }> }[] = [
+  { id: 'studio', label: 'Studio Synthesizer', icon: Sparkles },
+  { id: 'canvas', label: 'Canvas Suite', icon: Sliders },
+  { id: 'voice', label: 'Voice Studio', icon: Volume2 },
+  { id: 'lab', label: 'Prompt Lab', icon: Wand2 },
+  { id: 'gallery', label: 'Curated Gallery', icon: Compass },
+  { id: 'history', label: 'History Archive', icon: Archive },
+];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<StudioTab>('editor');
-  const [allVoices, setAllVoices] = useState<VoiceProfile[]>(VOICES);
-  const [selectedVoice, setSelectedVoice] = useState<VoiceProfile>(VOICES[0]); // Default Babajide or Jean-Luc
-  const [playingPreviewId, setPlayingPreviewId] = useState<string | null>(null);
-  const [takes, setTakes] = useState<TakeItem[]>([]);
-  const [initialTakeToImport, setInitialTakeToImport] = useState<TakeItem | null>(null);
-  const [isAIWriterOpen, setIsAIWriterOpen] = useState<boolean>(false);
-  const [isCloningModalOpen, setIsCloningModalOpen] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<AppTab>('studio');
+  const [settings, setSettings] = useState<StudioSettings>(INITIAL_SETTINGS);
+  const [currentImage, setCurrentImage] = useState<GeneratedImage | null>(CURATED_SHOWCASE[1]);
+  const [statusModalOpen, setStatusModalOpen] = useState<boolean>(false);
+  const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
+  const [voiceModalOpen, setVoiceModalOpen] = useState<boolean>(false);
 
-  // Hidden audio element for preview samples
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Load saved cloned voices on mount
-  useEffect(() => {
+  // History state loaded from localStorage, pre-seeded with showcase pieces
+  const [history, setHistory] = useState<GeneratedImage[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_CLONES);
+      const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed: VoiceProfile[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setAllVoices([...parsed, ...VOICES]);
-        }
+        return JSON.parse(saved);
       }
     } catch (e) {
-      console.warn('Failed to load cloned voices from storage', e);
+      console.warn('Failed to load history from storage:', e);
     }
+    return CURATED_SHOWCASE;
+  });
+
+  // Save history on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+    } catch (e) {
+      console.warn('Failed to persist history:', e);
+    }
+  }, [history]);
+
+  const handleUpdateSettings = useCallback((updated: Partial<StudioSettings>) => {
+    setSettings((prev) => ({ ...prev, ...updated }));
   }, []);
 
-  // Handle previewing a voice's sample commercial line
-  const handleTogglePreview = async (voice: VoiceProfile) => {
-    if (playingPreviewId === voice.id) {
-      setPlayingPreviewId(null);
-      if (previewAudioRef.current) previewAudioRef.current.pause();
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+  const handleImageGenerated = useCallback((newImage: GeneratedImage) => {
+    setHistory((prev) => [newImage, ...prev]);
+    setCurrentImage(newImage);
+  }, []);
+
+  const handleToggleFavorite = useCallback((id: string) => {
+    setHistory((prev) =>
+      prev.map((img) => (img.id === id ? { ...img, isFavorite: !img.isFavorite } : img))
+    );
+  }, []);
+
+  const handleDeleteImage = useCallback((id: string) => {
+    setHistory((prev) => prev.filter((img) => img.id !== id));
+    setCurrentImage((curr) => {
+      if (curr?.id === id) {
+        return history.find((img) => img.id !== id) || null;
       }
-      bgMusic.stop();
-      return;
-    }
-
-    // Stop existing preview
-    if (previewAudioRef.current) previewAudioRef.current.pause();
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    bgMusic.stop();
-
-    setPlayingPreviewId(voice.id);
-
-    try {
-      const result = await generateSpeech(
-        voice.sampleScript,
-        voice,
-        (speaking) => {
-          if (!speaking) setPlayingPreviewId(null);
-        }
-      );
-
-      if (result.audioUrl && previewAudioRef.current) {
-        previewAudioRef.current.src = result.audioUrl;
-        previewAudioRef.current.play().catch(() => {});
-        previewAudioRef.current.onended = () => {
-          setPlayingPreviewId(null);
-        };
-      }
-    } catch {
-      setPlayingPreviewId(null);
-    }
-  };
-
-  const handleSelectVoiceFromCatalog = (voice: VoiceProfile) => {
-    setSelectedVoice(voice);
-    setActiveTab('studio');
-  };
-
-  const handleSelectTemplate = (template: AdTemplate, recommendedVoice?: VoiceProfile) => {
-    if (recommendedVoice) {
-      setSelectedVoice(recommendedVoice);
-    }
-    setActiveTab('studio');
-  };
-
-  const handleAddTake = (take: TakeItem) => {
-    setTakes((prev) => [take, ...prev]);
-  };
-
-  const handleRestoreTake = (take: TakeItem) => {
-    setSelectedVoice(take.voice);
-    setActiveTab('studio');
-  };
-
-  const handleCreateVideoFromTake = (take: TakeItem) => {
-    setInitialTakeToImport(take);
-    setActiveTab('editor');
-  };
-
-  // Voice Cloning Completion
-  const handleVoiceCloned = (newClone: VoiceProfile) => {
-    setAllVoices((prev) => {
-      const updated = [newClone, ...prev.filter((v) => v.id !== newClone.id)];
-      try {
-        const onlyClones = updated.filter((v) => v.isCloned);
-        localStorage.setItem(STORAGE_KEY_CLONES, JSON.stringify(onlyClones));
-      } catch (e) {
-        console.warn('Failed to persist clone', e);
-      }
-      return updated;
+      return curr;
     });
+  }, [history]);
 
-    setSelectedVoice(newClone);
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+  }, []);
+
+  const handleRemixInStudio = useCallback((remixSettings: Partial<StudioSettings>) => {
+    handleUpdateSettings(remixSettings);
     setActiveTab('studio');
-  };
+  }, [handleUpdateSettings]);
 
-  // Delete cloned voice
-  const handleDeleteClone = (voiceId: string) => {
-    setAllVoices((prev) => {
-      const updated = prev.filter((v) => v.id !== voiceId);
-      try {
-        const onlyClones = updated.filter((v) => v.isCloned);
-        localStorage.setItem(STORAGE_KEY_CLONES, JSON.stringify(onlyClones));
-      } catch {}
-      return updated;
+  const handleOpenInCanvas = useCallback((image: GeneratedImage) => {
+    setCurrentImage(image);
+    setActiveTab('canvas');
+  }, []);
+
+  const handleSendToStudioAsReference = useCallback((dataUrl: string, name: string) => {
+    handleUpdateSettings({
+      referenceImage: dataUrl,
+      referenceName: name,
     });
+    setActiveTab('studio');
+  }, [handleUpdateSettings]);
 
-    if (selectedVoice.id === voiceId) {
-      setSelectedVoice(VOICES[0]);
-    }
+  // Screen to Screen navigation helpers
+  const currentScreenIndex = SCREENS.findIndex((s) => s.id === activeTab);
+  const prevScreen = currentScreenIndex > 0 ? SCREENS[currentScreenIndex - 1] : null;
+  const nextScreen = currentScreenIndex < SCREENS.length - 1 ? SCREENS[currentScreenIndex + 1] : null;
+
+  const handleGoToPrevScreen = () => {
+    if (prevScreen) setActiveTab(prevScreen.id);
   };
+
+  const handleGoToNextScreen = () => {
+    if (nextScreen) setActiveTab(nextScreen.id);
+  };
+
+  // Voice commands setup
+  const voiceCommands: VoiceCommand[] = useMemo(
+    () => [
+      {
+        command: 'go to studio',
+        description: 'Navigate to Image Studio',
+        action: () => setActiveTab('studio'),
+      },
+      {
+        command: 'studio',
+        description: 'Navigate to Image Studio',
+        action: () => setActiveTab('studio'),
+      },
+      {
+        command: 'go to canvas',
+        description: 'Navigate to Canvas Suite',
+        action: () => setActiveTab('canvas'),
+      },
+      {
+        command: 'canvas',
+        description: 'Navigate to Canvas Suite',
+        action: () => setActiveTab('canvas'),
+      },
+      {
+        command: 'go to voice studio',
+        description: 'Navigate to Voice Studio',
+        action: () => setActiveTab('voice'),
+      },
+      {
+        command: 'voice studio',
+        description: 'Navigate to Voice Studio',
+        action: () => setActiveTab('voice'),
+      },
+      {
+        command: 'voice',
+        description: 'Navigate to Voice Studio',
+        action: () => setActiveTab('voice'),
+      },
+      {
+        command: 'prompt lab',
+        description: 'Navigate to Prompt Lab',
+        action: () => setActiveTab('lab'),
+      },
+      {
+        command: 'lab',
+        description: 'Navigate to Prompt Lab',
+        action: () => setActiveTab('lab'),
+      },
+      {
+        command: 'gallery',
+        description: 'Open Curated Gallery',
+        action: () => setActiveTab('gallery'),
+      },
+      {
+        command: 'history',
+        description: 'Open History Archive',
+        action: () => setActiveTab('history'),
+      },
+      {
+        command: 'open drawer',
+        description: 'Open Studio Options Drawer',
+        action: () => setDrawerOpen(true),
+      },
+      {
+        command: 'options',
+        description: 'Open Studio Options Drawer',
+        action: () => setDrawerOpen(true),
+      },
+      {
+        command: 'close drawer',
+        description: 'Close Options Drawer',
+        action: () => setDrawerOpen(false),
+      },
+    ],
+    []
+  );
+
+  const handleTranscript = useCallback((text: string) => {
+    // If voice modal is open, user can choose whether to apply. If listening directly in background, optionally append.
+    console.log('Voice transcript received:', text);
+  }, []);
+
+  const voiceTools = useVoiceTools(handleTranscript, voiceCommands);
+
+  // Keyboard navigation shortcuts (1-6 for screen jumps, [ ] for previous/next screen)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when user is typing in inputs or textareas
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      if (e.key === '1') setActiveTab('studio');
+      if (e.key === '2') setActiveTab('canvas');
+      if (e.key === '3') setActiveTab('voice');
+      if (e.key === '4') setActiveTab('lab');
+      if (e.key === '5') setActiveTab('gallery');
+      if (e.key === '6') setActiveTab('history');
+      if (e.key === 'v' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setVoiceModalOpen((prev) => !prev);
+      }
+      if (e.key === 'd' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setDrawerOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950 antialiased">
-      {/* Hidden audio for card sample previews */}
-      <audio ref={previewAudioRef} className="hidden" />
-
-      {/* Header */}
+    <div className="min-h-screen bg-[#090D14] text-slate-100 flex flex-col font-sans selection:bg-amber-400/20 selection:text-amber-200 pb-24 md:pb-16">
+      {/* Top Bar adhering to strict 3-zone contract */}
       <Header
         activeTab={activeTab}
-        onTabChange={setActiveTab}
-        voiceCount={allVoices.length}
-        onOpenCloningModal={() => setIsCloningModalOpen(true)}
+        onSelectTab={setActiveTab}
+        onOpenStatusModal={() => setStatusModalOpen(true)}
+        onQuickGenerate={() => setActiveTab('studio')}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        onOpenVoiceTools={() => setVoiceModalOpen(true)}
+        isListening={voiceTools.isListening}
+        historyCount={history.length}
       />
 
-      {/* Sub-hero feature highlight pill bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border-b border-slate-800/60 py-2.5 px-4 text-xs text-slate-300">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-            <span className="flex items-center gap-1.5 text-amber-400 font-bold">
-              <span>🌍</span>
-              <span>Voix Africaines (Nigeria, Ghana, Kenya, SA, Sénégal, CI)</span>
-            </span>
-            <span className="hidden sm:inline text-slate-600">&bull;</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-              <Dna className="w-3.5 h-3.5" />
-              <span>Clonage Vocal IA (Micro & Upload)</span>
-            </span>
-            <span className="hidden sm:inline text-slate-600">&bull;</span>
-            <span className="flex items-center gap-1.5 text-cyan-400 font-semibold">
-              <Users className="w-3.5 h-3.5" />
-              <span>Hommes & Femmes</span>
-            </span>
-            <span className="hidden sm:inline text-slate-600">&bull;</span>
-            <span className="flex items-center gap-1.5 text-indigo-400 font-semibold">
-              <Globe className="w-3.5 h-3.5" />
-              <span>Français 🇫🇷 & English 🇺🇸</span>
-            </span>
+      {/* Screen-to-Screen Breadcrumb & Quick Switcher Strip */}
+      <nav aria-label="Screen Navigation" className="border-b border-slate-800/60 bg-[#070A10]/60 backdrop-blur-sm px-6 py-2">
+        <div className="max-w-7xl mx-auto flex items-center justify-between text-xs">
+          {/* Breadcrumb Path */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+            <span className="text-slate-400 hidden sm:inline">Screen:</span>
+            {SCREENS.map((screen, idx) => {
+              const Icon = screen.icon;
+              const isActive = activeTab === screen.id;
+              return (
+                <React.Fragment key={screen.id}>
+                  {idx > 0 && <span className="text-slate-600">/</span>}
+                  <button
+                    onClick={() => setActiveTab(screen.id)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? 'bg-amber-400/15 text-amber-300 font-semibold border border-amber-400/30 shadow-xs'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{screen.label}</span>
+                  </button>
+                </React.Fragment>
+              );
+            })}
           </div>
 
-          <div className="text-[11px] text-emerald-400 flex items-center gap-2 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>Studio 100% Gratuit & Illimité (5min+)</span>
+          {/* Quick Screen-to-Screen Step Buttons */}
+          <div className="hidden sm:flex items-center gap-1 shrink-0 ml-4">
+            <button
+              onClick={handleGoToPrevScreen}
+              disabled={!prevScreen}
+              className={`p-1.5 rounded-md border flex items-center gap-1 transition-all ${
+                prevScreen
+                  ? 'text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800 cursor-pointer'
+                  : 'text-slate-700 border-slate-900 cursor-not-allowed opacity-40'
+              }`}
+              title={prevScreen ? `Previous: ${prevScreen.label}` : 'No previous screen'}
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span className="text-[11px] hidden md:inline">Prev</span>
+            </button>
+            <button
+              onClick={handleGoToNextScreen}
+              disabled={!nextScreen}
+              className={`p-1.5 rounded-md border flex items-center gap-1 transition-all ${
+                nextScreen
+                  ? 'text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800 cursor-pointer'
+                  : 'text-slate-700 border-slate-900 cursor-not-allowed opacity-40'
+              }`}
+              title={nextScreen ? `Next: ${nextScreen.label}` : 'No next screen'}
+            >
+              <span className="text-[11px] hidden md:inline">Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
-      </div>
+      </nav>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {activeTab === 'editor' && (
-          <div className="animate-in fade-in duration-200">
-            <ErrorBoundary label="Éditeur vidéo">
-              <VideoEditor
-                sessionTakes={takes}
-                initialTakeToImport={initialTakeToImport}
-                onClearInitialTake={() => setInitialTakeToImport(null)}
-              />
-            </ErrorBoundary>
-          </div>
-        )}
-
+      {/* Main Workspace Frame */}
+      <main className="flex-1 w-full">
         {activeTab === 'studio' && (
-          <div className="space-y-8 animate-in fade-in duration-200">
-            <CommercialStudio
-              selectedVoice={selectedVoice}
-              onOpenVoiceCatalog={() => setActiveTab('catalog')}
-              onOpenAIWriter={() => setIsAIWriterOpen(true)}
-              onAddTake={handleAddTake}
-            />
-
-            {/* Takes Session Library */}
-            <TakeHistory
-              takes={takes}
-              onClearTakes={() => setTakes([])}
-              onRestoreTake={handleRestoreTake}
-              onCreateVideo={handleCreateVideoFromTake}
-            />
-          </div>
+          <PromptStudio
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            onImageGenerated={handleImageGenerated}
+            onOpenCanvas={handleOpenInCanvas}
+            currentImage={currentImage}
+            onSetCurrentImage={setCurrentImage}
+          />
         )}
 
-        {activeTab === 'catalog' && (
-          <div className="animate-in fade-in duration-200">
-            <VoiceCatalog
-              voices={allVoices}
-              selectedVoice={selectedVoice}
-              onSelectVoice={handleSelectVoiceFromCatalog}
-              playingPreviewId={playingPreviewId}
-              onTogglePreview={handleTogglePreview}
-              onOpenCloningModal={() => setIsCloningModalOpen(true)}
-              onDeleteClone={handleDeleteClone}
-            />
-          </div>
+        {activeTab === 'canvas' && (
+          <CanvasEditor
+            image={currentImage}
+            onSendToStudioAsReference={handleSendToStudioAsReference}
+            onOpenStudio={() => setActiveTab('studio')}
+          />
         )}
 
-        {activeTab === 'templates' && (
-          <div className="animate-in fade-in duration-200">
-            <TemplatesGallery onSelectTemplate={handleSelectTemplate} />
-          </div>
+        {activeTab === 'voice' && (
+          <VoiceStudio
+            currentImage={currentImage}
+            onSendToStudioPrompt={(promptText) => {
+              handleUpdateSettings({ prompt: promptText });
+              setActiveTab('studio');
+            }}
+            onNavigateTab={setActiveTab}
+          />
+        )}
+
+        {activeTab === 'lab' && (
+          <PromptLab
+            onApplySettingsToStudio={handleUpdateSettings}
+            onOpenStudio={() => setActiveTab('studio')}
+          />
+        )}
+
+        {activeTab === 'gallery' && (
+          <CuratedGallery
+            onRemixInStudio={handleRemixInStudio}
+            onOpenInCanvas={handleOpenInCanvas}
+          />
+        )}
+
+        {activeTab === 'history' && (
+          <HistoryView
+            history={history}
+            onToggleFavorite={handleToggleFavorite}
+            onDeleteImage={handleDeleteImage}
+            onClearHistory={handleClearHistory}
+            onRemixInStudio={handleRemixInStudio}
+            onOpenInCanvas={handleOpenInCanvas}
+            onOpenStudio={() => setActiveTab('studio')}
+          />
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950/80 py-6 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>
-            VoxStudio AI &bull; Studio vocal et clonage vocal IA pour publicités radio, TV, podcasts et réseaux sociaux.
-          </p>
-          <div className="flex flex-wrap items-center gap-4">
-            <span>🌍 8 Voix Africaines</span>
-            <span>🇫🇷 6 Voix Françaises</span>
-            <span>🇺🇸 6 Voix Anglaises</span>
-            <span>✨ 6 Voix Spéciales</span>
-            <span>🧬 Clonage Illimité</span>
-          </div>
-        </div>
-      </footer>
-
-      {/* AI Commercial Scriptwriter Modal */}
-      <AICommercialWriterModal
-        isOpen={isAIWriterOpen}
-        onClose={() => setIsAIWriterOpen(false)}
-        currentLanguage={selectedVoice.language === 'mixed' ? 'fr' : selectedVoice.language}
-        currentGender={selectedVoice.gender}
-        onSelectScript={(script, notes) => {
-          setSelectedVoice((prev) => ({
-            ...prev,
-            sampleScript: script,
-            stylePrompt: notes ? `${prev.stylePrompt} Direction: ${notes}` : prev.stylePrompt,
-          }));
-        }}
+      {/* Floating Button Navs / Bottom Dock */}
+      <NavigationDock
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onOpenVoiceTools={() => setVoiceModalOpen(true)}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        historyCount={history.length}
+        isListening={voiceTools.isListening}
       />
 
-      {/* Voice Cloning Studio Modal */}
-      <VoiceCloningModal
-        isOpen={isCloningModalOpen}
-        onClose={() => setIsCloningModalOpen(false)}
-        onVoiceCloned={handleVoiceCloned}
+      {/* Slide-out Options Drawer */}
+      <StudioDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
+        onOpenVoiceTools={() => {
+          setDrawerOpen(false);
+          setVoiceModalOpen(true);
+        }}
+        onOpenStatusModal={() => {
+          setDrawerOpen(false);
+          setStatusModalOpen(true);
+        }}
+        onClearHistory={handleClearHistory}
+        historyCount={history.length}
+      />
+
+      {/* Voice Tools Modal (STT Dictation, Speech Waveform, AI Critic Audio) */}
+      <VoiceToolsModal
+        isOpen={voiceModalOpen}
+        onClose={() => setVoiceModalOpen(false)}
+        isListening={voiceTools.isListening}
+        onToggleListening={voiceTools.toggleListening}
+        transcript={voiceTools.transcript}
+        interimTranscript={voiceTools.interimTranscript}
+        isSpeaking={voiceTools.isSpeaking}
+        onSpeak={voiceTools.speakText}
+        onStopSpeaking={voiceTools.stopSpeaking}
+        onApplyPrompt={(text) => {
+          handleUpdateSettings({ prompt: text });
+          setActiveTab('studio');
+        }}
+        onEnhanceAndSpeak={() => {
+          // Speak current prompt aloud
+          voiceTools.speakText(`Synthesizing visual scene: ${settings.prompt}`);
+        }}
+        currentImage={currentImage}
+        availableVoices={voiceTools.availableVoices}
+        selectedVoice={voiceTools.selectedVoice}
+        onSelectVoice={voiceTools.setSelectedVoice}
+        volumeLevel={voiceTools.volumeLevel}
+        onOpenVoiceStudio={() => setActiveTab('voice')}
+      />
+
+      {/* Gemini Engine Status Modal */}
+      <StatusModal
+        isOpen={statusModalOpen}
+        onClose={() => setStatusModalOpen(false)}
       />
     </div>
   );
