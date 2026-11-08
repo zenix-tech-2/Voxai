@@ -184,7 +184,11 @@ export const CommercialStudio: React.FC<CommercialStudioProps> = ({
         }, 150);
       } else {
         setEngineSource('browser');
-        setStatusMessage('Lecture en direct de la voix publicitaire');
+        setStatusMessage(
+          result.error
+            ? `⚠️ Voix IA indisponible (${result.error}). Lecture avec la voix de l'appareil, sans fichier téléchargeable.`
+            : 'Lecture en direct de la voix de l\'appareil'
+        );
       }
     } catch (err: any) {
       console.warn(err);

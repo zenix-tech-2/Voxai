@@ -8,22 +8,47 @@ export const app = express();
 
 app.use(express.json({ limit: "50mb" }));
 
-// Initialize shared Gemini client
-const apiKey = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({
-  apiKey: apiKey,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+// Gemini client is created lazily so a missing key never breaks the rest of the API.
+const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not set on the server");
+  if (!_ai) _ai = new GoogleGenAI({ apiKey });
+  return _ai;
+}
+
+// Models can be overridden from Vercel env vars; each list is tried in order.
+const TTS_MODELS = [
+  process.env.GEMINI_TTS_MODEL,
+  "gemini-3.8-flash-lite-tts",
+  "gemini-2.5-flash-preview-tts",
+].filter(Boolean) as string[];
+const TEXT_MODELS = [
+  process.env.GEMINI_TEXT_MODEL,
+  "gemini-3.8-flash",
+  "gemini-2.5-flash",
+].filter(Boolean) as string[];
+
+async function generateWithFallback(models: string[], params: any) {
+  let lastErr: any;
+  for (const model of models) {
+    try {
+      return await getAI().models.generateContent({ ...params, model });
+    } catch (e: any) {
+      lastErr = e;
+      console.warn(`Model ${model} failed:`, e?.message);
+    }
+  }
+  throw lastErr || new Error("No model available");
+}
 
 // Health & Status endpoint
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({
     status: "ok",
     hasApiKey: Boolean(apiKey),
+    ttsModels: TTS_MODELS,
+    textModels: TEXT_MODELS,
   });
 });
 
@@ -64,8 +89,9 @@ function splitTextIntoChunks(text: string, maxChunkLength = 400): string[] {
 
 // Concatenate multiple 24kHz 16-bit mono WAV buffers into a single seamless WAV file
 // Gemini TTS normally returns raw 24kHz 16-bit mono PCM (no header). Wrap it in a WAV header if needed.
-function ensureWav(buf: Buffer): Buffer {
+function ensureWav(buf: Buffer, mimeType?: string): Buffer {
   if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF") return buf;
+  const rate = Number(/rate=(\d+)/i.exec(mimeType || "")?.[1]) || 24000;
   const header = Buffer.alloc(44);
   header.write("RIFF", 0);
   header.writeUInt32LE(36 + buf.length, 4);
@@ -73,8 +99,8 @@ function ensureWav(buf: Buffer): Buffer {
   header.writeUInt32LE(16, 16);
   header.writeUInt16LE(1, 20); // PCM
   header.writeUInt16LE(1, 22); // mono
-  header.writeUInt32LE(24000, 24);
-  header.writeUInt32LE(48000, 28);
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * 2, 28);
   header.writeUInt16LE(2, 32);
   header.writeUInt16LE(16, 34);
   header.write("data", 36);
@@ -116,9 +142,9 @@ app.post("/api/tts", async (req: Request, res: Response) => {
 
     if (!apiKey) {
       res.json({
-        success: true,
+        success: false,
         fallback: true,
-        message: "Mode 100% Gratuit Actif: Synthèse vocale naturelle",
+        error: "GEMINI_API_KEY manquante sur le serveur (Vercel > Settings > Environment Variables)",
       });
       return;
     }
@@ -133,8 +159,7 @@ app.post("/api/tts", async (req: Request, res: Response) => {
 
     // Synthesize each chunk
     for (const chunk of chunks) {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash-lite-tts",
+      const response = await generateWithFallback(TTS_MODELS, {
         contents: [
           {
             role: "user",
@@ -155,19 +180,18 @@ app.post("/api/tts", async (req: Request, res: Response) => {
         },
       });
 
-      const base64Audio =
-        response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      const inline = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData?.data)?.inlineData;
 
-      if (base64Audio) {
-        wavBuffers.push(ensureWav(Buffer.from(base64Audio, "base64")));
+      if (inline?.data) {
+        wavBuffers.push(ensureWav(Buffer.from(inline.data, "base64"), inline.mimeType));
       }
     }
 
     if (wavBuffers.length === 0) {
       res.json({
-        success: true,
+        success: false,
         fallback: true,
-        message: "Mode 100% Gratuit: Synthèse locale",
+        error: "Le modèle TTS n'a renvoyé aucun audio",
       });
       return;
     }
@@ -182,11 +206,11 @@ app.post("/api/tts", async (req: Request, res: Response) => {
       chunksCount: chunks.length,
     });
   } catch (error: any) {
-    console.warn("Gemini TTS Free Fallback:", error?.message);
+    console.warn("Gemini TTS failed:", error?.message);
     res.json({
-      success: true,
+      success: false,
       fallback: true,
-      message: "Mode 100% Gratuit: Synthèse vocale",
+      error: String(error?.message || "Erreur TTS").slice(0, 300),
     });
   }
 });
@@ -259,8 +283,7 @@ Respond with valid JSON with this exact structure:
   ]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+    const response = await generateWithFallback(TEXT_MODELS, {
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -290,6 +313,7 @@ Respond with valid JSON with this exact structure:
     res.json({
       success: true,
       isFallback: true,
+      warning: String(error?.message || "").slice(0, 200),
       scripts: [
         {
           title: isFrench ? "Spot Publicitaire Percutant" : "High-Impact Commercial",
@@ -369,8 +393,7 @@ Return ONLY a valid JSON object matching these keys.`;
 
     const cleanMime = mimeType.split(";")[0] || "audio/webm";
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+    const response = await generateWithFallback(TEXT_MODELS, {
       contents: [
         {
           role: "user",

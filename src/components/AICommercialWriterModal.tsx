@@ -59,9 +59,18 @@ export const AICommercialWriterModal: React.FC<AICommercialWriterModalProps> = (
         }),
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(`Serveur indisponible (${res.status}). Vérifiez le déploiement Vercel et GEMINI_API_KEY.`);
+      }
       if (data.success && data.scripts && data.scripts.length > 0) {
         setGeneratedScripts(data.scripts);
+        if (data.isFallback) {
+          setError(`Script de secours affiché (IA indisponible${data.warning ? ` : ${data.warning}` : ''})`);
+        }
       } else {
         setError(data.error || 'Erreur lors de la génération du script');
       }

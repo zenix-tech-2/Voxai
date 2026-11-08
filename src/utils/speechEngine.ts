@@ -71,57 +71,6 @@ export async function findBestBrowserVoice(voice: VoiceProfile): Promise<SpeechS
   return bestGender || matchingLang[0];
 }
 
-// Helper to write string to DataView for WAV header
-function writeString(view: DataView, offset: number, str: string) {
-  for (let i = 0; i < str.length; i++) {
-    view.setUint8(offset + i, str.charCodeAt(i));
-  }
-}
-
-// Generates an authentic 24kHz WAV Blob in pure browser client (100% Free, No API key or Card needed)
-export function createBrowserWavBlob(durationSeconds: number, sampleRate = 24000, pitch = 1.0): Blob {
-  const safeDuration = Math.max(2, Math.min(600, durationSeconds));
-  const numSamples = Math.floor(sampleRate * safeDuration);
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-
-  // Write WAV RIFF header
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
-  view.setUint16(20, 1, true); // AudioFormat (1 for PCM)
-  view.setUint16(22, 1, true); // NumChannels (1 for mono)
-  view.setUint32(24, sampleRate, true); // SampleRate (24000)
-  view.setUint32(28, sampleRate * 2, true); // ByteRate (48000)
-  view.setUint16(32, 2, true); // BlockAlign (2 bytes)
-  view.setUint16(34, 16, true); // BitsPerSample (16 bits)
-  writeString(view, 36, 'data');
-  view.setUint32(40, numSamples * 2, true);
-
-  // Generate subtle voiceover acoustic carrier waveform
-  const baseFreq = 165 * Math.max(0.7, Math.min(1.4, pitch));
-  let offset = 44;
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    // Rhythmic speaking cadence modulation (simulate speech cadence pauses)
-    const speechCadence = 0.4 + 0.6 * Math.sin(2 * Math.PI * 3.2 * t) * Math.cos(2 * Math.PI * 0.8 * t);
-    const wave =
-      Math.sin(2 * Math.PI * baseFreq * t) * 0.35 +
-      Math.sin(2 * Math.PI * (baseFreq * 2) * t) * 0.15 +
-      Math.sin(2 * Math.PI * (baseFreq * 3) * t) * 0.05;
-
-    const sample = Math.max(-1, Math.min(1, wave * Math.max(0, speechCadence) * 0.35));
-    const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-    view.setInt16(offset, intSample, true);
-    offset += 2;
-  }
-
-  return new Blob([view], { type: 'audio/wav' });
-}
-
 // Main Speech Generator (100% Free, Zero Card Needed, Zero Payment)
 export async function generateSpeech(
   text: string,
@@ -130,6 +79,8 @@ export async function generateSpeech(
 ): Promise<TTSResult> {
   const words = text.trim().split(/\s+/).length;
   const estimatedSeconds = Math.max(2, Math.round(words / (2.5 * voice.rate)));
+
+  let serverError: string | undefined;
 
   // Try server generation
   try {
@@ -143,8 +94,15 @@ export async function generateSpeech(
       }),
     });
 
-    if (res.ok) {
-      const data = await res.json();
+    const raw = await res.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      serverError = `Serveur indisponible (${res.status}) : ${raw.slice(0, 80)}`;
+    }
+    if (data) {
+      if (!data.success) serverError = data.error;
       if (data.success && data.audioBase64) {
         const byteCharacters = atob(data.audioBase64);
         const byteNumbers = new Array(byteCharacters.length);
@@ -162,22 +120,14 @@ export async function generateSpeech(
         };
       }
     }
-  } catch {
-    // Continue to free client-side synthesis seamlessly
+  } catch (e: any) {
+    serverError = e?.message || 'Connexion au serveur impossible';
   }
 
-  // 100% Free Browser Speech Synthesis with Guaranteed Downloadable WAV Blob
+  // Fallback: live browser speech synthesis (no downloadable file is possible with this API)
   return new Promise(async (resolve) => {
-    // Generate genuine playable & downloadable WAV file
-    const localBlob = createBrowserWavBlob(estimatedSeconds, 24000, voice.pitch);
-    const audioUrl = URL.createObjectURL(localBlob);
-
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      resolve({
-        audioUrl,
-        blob: localBlob,
-        source: 'browser',
-      });
+      resolve({ source: 'browser', error: serverError || 'Synthèse vocale indisponible sur cet appareil' });
       return;
     }
 
@@ -185,35 +135,22 @@ export async function generateSpeech(
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       const browserVoice = await findBestBrowserVoice(voice);
-
-      if (browserVoice) {
-        utterance.voice = browserVoice;
-      }
+      if (browserVoice) utterance.voice = browserVoice;
 
       utterance.lang = voice.language === 'fr' ? 'fr-FR' : 'en-US';
       utterance.rate = voice.rate;
       utterance.pitch = voice.pitch;
 
       if (onBrowserSpeaking) onBrowserSpeaking(true);
-
-      utterance.onend = () => {
-        if (onBrowserSpeaking) onBrowserSpeaking(false);
-      };
-
-      utterance.onerror = () => {
-        if (onBrowserSpeaking) onBrowserSpeaking(false);
-      };
+      utterance.onend = () => onBrowserSpeaking?.(false);
+      utterance.onerror = () => onBrowserSpeaking?.(false);
 
       window.speechSynthesis.speak(utterance);
     } catch (e) {
       console.warn('Speech synthesis playback note:', e);
+      onBrowserSpeaking?.(false);
     }
 
-    resolve({
-      audioUrl,
-      blob: localBlob,
-      source: 'browser',
-      duration: estimatedSeconds,
-    });
+    resolve({ source: 'browser', duration: estimatedSeconds, error: serverError });
   });
 }
